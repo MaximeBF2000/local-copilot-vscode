@@ -1,0 +1,12 @@
+src/**
+test/**
+scripts/**
+out/test/**
+out/scripts/**
+**/*.map
+**/*.ts
+tsconfig.json
+brief.md
+node_modules/**
+.vscode/**
+out/test/integration/results.txt

@@ -1,0 +1,336 @@
+{
+  "name": "local-copilot",
+  "displayName": "Local Copilot",
+  "description": "Copilot-style inline autocomplete and Cmd+K editing, powered by local Ollama models.",
+  "version": "0.1.0",
+  "publisher": "local",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Machine Learning",
+    "Other"
+  ],
+  "keywords": [
+    "ollama",
+    "autocomplete",
+    "copilot",
+    "local",
+    "ai"
+  ],
+  "main": "./out/src/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "localCopilot.inlineEdit",
+        "title": "Edit Selection with AI",
+        "category": "Local Copilot"
+      },
+      {
+        "command": "localCopilot.fileEdit",
+        "title": "Edit File with AI",
+        "category": "Local Copilot"
+      },
+      {
+        "command": "localCopilot.acceptInlineEdit",
+        "title": "Accept AI Edit",
+        "category": "Local Copilot",
+        "icon": "$(check)"
+      },
+      {
+        "command": "localCopilot.rejectInlineEdit",
+        "title": "Reject AI Edit",
+        "category": "Local Copilot",
+        "icon": "$(close)"
+      },
+      {
+        "command": "localCopilot.cancelGeneration",
+        "title": "Cancel AI Generation",
+        "category": "Local Copilot"
+      },
+      {
+        "command": "localCopilot.acceptFileEdit",
+        "title": "Accept AI File Changes",
+        "category": "Local Copilot",
+        "icon": "$(check)"
+      },
+      {
+        "command": "localCopilot.rejectFileEdit",
+        "title": "Reject AI File Changes",
+        "category": "Local Copilot",
+        "icon": "$(close)"
+      },
+      {
+        "command": "localCopilot.selectModel",
+        "title": "Select Model",
+        "category": "Local Copilot"
+      },
+      {
+        "command": "localCopilot.selectEditModel",
+        "title": "Select Edit Model",
+        "category": "Local Copilot"
+      },
+      {
+        "command": "localCopilot.selectDecisionModel",
+        "title": "Select Decision Model",
+        "category": "Local Copilot"
+      },
+      {
+        "command": "localCopilot.toggleAutocomplete",
+        "title": "Toggle Autocomplete",
+        "category": "Local Copilot"
+      },
+      {
+        "command": "localCopilot.showMenu",
+        "title": "Show Menu",
+        "category": "Local Copilot"
+      },
+      {
+        "command": "localCopilot.showLogs",
+        "title": "Show Logs",
+        "category": "Local Copilot"
+      },
+      {
+        "command": "localCopilot.configureShortcuts",
+        "title": "Change Keyboard Shortcuts",
+        "category": "Local Copilot"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "localCopilot.inlineEdit",
+        "key": "ctrl+j",
+        "mac": "cmd+j",
+        "when": "editorTextFocus && !editorReadonly && !localCopilot.inlineEditPending"
+      },
+      {
+        "command": "localCopilot.fileEdit",
+        "key": "ctrl+shift+j",
+        "mac": "cmd+shift+j",
+        "when": "editorTextFocus && !editorReadonly"
+      },
+      {
+        "command": "localCopilot.acceptInlineEdit",
+        "key": "tab",
+        "when": "editorTextFocus && localCopilot.inlineEditPending"
+      },
+      {
+        "command": "localCopilot.rejectInlineEdit",
+        "key": "escape",
+        "when": "editorTextFocus && localCopilot.inlineEditPending"
+      },
+      {
+        "command": "localCopilot.cancelGeneration",
+        "key": "escape",
+        "when": "editorTextFocus && localCopilot.generating"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "localCopilot.acceptFileEdit",
+          "when": "localCopilot.fileEditPending && isInDiffEditor",
+          "group": "navigation@1"
+        },
+        {
+          "command": "localCopilot.rejectFileEdit",
+          "when": "localCopilot.fileEditPending && isInDiffEditor",
+          "group": "navigation@2"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "localCopilot.acceptInlineEdit",
+          "when": "localCopilot.inlineEditPending"
+        },
+        {
+          "command": "localCopilot.rejectInlineEdit",
+          "when": "localCopilot.inlineEditPending"
+        },
+        {
+          "command": "localCopilot.acceptFileEdit",
+          "when": "localCopilot.fileEditPending"
+        },
+        {
+          "command": "localCopilot.rejectFileEdit",
+          "when": "localCopilot.fileEditPending"
+        },
+        {
+          "command": "localCopilot.cancelGeneration",
+          "when": "localCopilot.generating"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Local Copilot",
+      "properties": {
+        "localCopilot.ollamaUrl": {
+          "type": "string",
+          "default": "http://localhost:11434",
+          "description": "Base URL of the local Ollama server."
+        },
+        "localCopilot.model": {
+          "type": "string",
+          "default": "qwen3.6:35b-mlx",
+          "description": "Ollama model used for autocomplete (and for edits unless 'Edit Model' is set). Use the 'Local Copilot: Select Model' command to pick from installed models."
+        },
+        "localCopilot.editModel": {
+          "type": "string",
+          "default": "",
+          "description": "Optional Ollama model used for Cmd+K edits. Leave empty to use the main model."
+        },
+        "localCopilot.keepAlive": {
+          "type": "string",
+          "default": "30m",
+          "description": "How long Ollama keeps models loaded in memory after the last request (e.g. '30m', '2h', '-1' for forever)."
+        },
+        "localCopilot.autocomplete.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show inline ghost-text suggestions while typing."
+        },
+        "localCopilot.autocomplete.debounceMs": {
+          "type": "number",
+          "default": 75,
+          "minimum": 0,
+          "description": "Typing pause (milliseconds) before requesting a suggestion."
+        },
+        "localCopilot.autocomplete.prefixLines": {
+          "type": "number",
+          "default": 120,
+          "minimum": 10,
+          "description": "Number of lines before the cursor sent as context."
+        },
+        "localCopilot.autocomplete.suffixLines": {
+          "type": "number",
+          "default": 40,
+          "minimum": 0,
+          "description": "Number of lines after the cursor sent as context."
+        },
+        "localCopilot.autocomplete.maxTokensSingleLine": {
+          "type": "number",
+          "default": 48,
+          "description": "Maximum tokens generated for a single-line suggestion."
+        },
+        "localCopilot.autocomplete.maxTokensMultiline": {
+          "type": "number",
+          "default": 200,
+          "description": "Maximum tokens generated for a multiline suggestion."
+        },
+        "localCopilot.autocomplete.maxTokensCommentToCode": {
+          "type": "number",
+          "default": 600,
+          "description": "Maximum tokens generated when implementing a comment."
+        },
+        "localCopilot.autocomplete.temperature": {
+          "type": "number",
+          "default": 0.1,
+          "description": "Sampling temperature for autocomplete."
+        },
+        "localCopilot.autocomplete.promptFormat": {
+          "type": "string",
+          "default": "auto",
+          "enum": [
+            "auto",
+            "qwen",
+            "deepseek",
+            "codellama",
+            "starcoder",
+            "codegemma",
+            "chat"
+          ],
+          "enumDescriptions": [
+            "Detect the fill-in-the-middle format from the model name (falls back to 'chat').",
+            "Qwen / Qwen-Coder fill-in-the-middle tokens.",
+            "DeepSeek-Coder fill-in-the-middle tokens.",
+            "Code Llama fill-in-the-middle tokens.",
+            "StarCoder fill-in-the-middle tokens.",
+            "CodeGemma fill-in-the-middle tokens.",
+            "Instruction prompt for models without fill-in-the-middle support (slower)."
+          ],
+          "description": "Prompt format used for autocomplete."
+        },
+        "localCopilot.autocomplete.disabledLanguages": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "plaintext",
+            "scminput",
+            "log",
+            "Log"
+          ],
+          "description": "Language IDs where autocomplete is disabled."
+        },
+        "localCopilot.decision.engine": {
+          "type": "string",
+          "default": "rules",
+          "enum": [
+            "rules",
+            "model"
+          ],
+          "enumDescriptions": [
+            "Fast TypeScript heuristics (no extra model).",
+            "Ask a small Ollama decision model (e.g. one with the 'decision' capability), falling back to rules on error or timeout."
+          ],
+          "description": "How decisions are made (should we suggest? does this comment ask for code? edit scope? related files?)."
+        },
+        "localCopilot.decision.model": {
+          "type": "string",
+          "default": "nimble:latest",
+          "description": "Ollama model used when the decision engine is 'model'."
+        },
+        "localCopilot.decision.timeoutMs": {
+          "type": "number",
+          "default": 400,
+          "description": "Maximum time to wait for a decision model before falling back to rules."
+        },
+        "localCopilot.edit.enableThinking": {
+          "type": "boolean",
+          "default": false,
+          "description": "Let thinking models reason before answering Cmd+K edits (slower, sometimes better)."
+        },
+        "localCopilot.edit.contextLines": {
+          "type": "number",
+          "default": 60,
+          "description": "Lines of surrounding code sent with an inline (Cmd+K) edit."
+        },
+        "localCopilot.edit.includeRelatedFiles": {
+          "type": "boolean",
+          "default": true,
+          "description": "Allow file-level edits (Cmd+Shift+K) to include locally imported files as context."
+        },
+        "localCopilot.edit.maxRelatedFiles": {
+          "type": "number",
+          "default": 4,
+          "description": "Maximum number of related files included in file-level edits."
+        },
+        "localCopilot.debugLogging": {
+          "type": "boolean",
+          "default": false,
+          "description": "Log prompts and timings to the 'Local Copilot' output channel."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p .",
+    "watch": "tsc -watch -p .",
+    "test": "npm run compile && node --test \"out/test/**/*.test.js\"",
+    "benchmark": "npm run compile && node out/scripts/benchmark.js",
+    "package": "npm run compile && vsce package --allow-missing-repository",
+    "test:integration": "sh scripts/runIntegrationTests.sh"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.90.0",
+    "@vscode/vsce": "^3.0.0",
+    "typescript": "^5.5.0"
+  }
+}
