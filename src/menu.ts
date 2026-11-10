@@ -22,7 +22,7 @@ export async function showMenu(): Promise<void> {
       run: () => vscode.commands.executeCommand('localCopilot.selectEditModel'),
     },
     {
-      label: usesDecisionModel ? '$(symbol-ruler) Use rules for decisions' : '$(lightbulb) Use a decision model',
+      label: usesDecisionModel ? '$(symbol-ruler) Use rules only for decisions' : '$(lightbulb) Use the decision model',
       description: usesDecisionModel ? `currently ${settings.decision.model}` : 'currently rules',
       run: () => updateSetting('decision.engine', usesDecisionModel ? 'rules' : 'model'),
     },

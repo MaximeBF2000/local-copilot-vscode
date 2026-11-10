@@ -17,7 +17,7 @@ export class AutocompleteProvider implements vscode.InlineCompletionItemProvider
   private readonly cache = new CompletionCache();
 
   /**
-   * @param isPaused returns true while another feature owns the document (e.g. a pending Cmd+J proposal),
+   * @param isPaused returns true while another feature owns the document (e.g. an inline prompt rewriting this file),
    *                 so ghost text never appears on top of it.
    */
   constructor(

@@ -6,7 +6,7 @@ export type ModelRole = 'model' | 'editModel' | 'decision.model';
 
 const ROLE_LABELS: Record<ModelRole, string> = {
   model: 'autocomplete (and edits by default)',
-  editModel: 'Cmd+J edits',
+  editModel: 'prompts (Cmd+J / Cmd+Shift+J)',
   'decision.model': 'decisions',
 };
 

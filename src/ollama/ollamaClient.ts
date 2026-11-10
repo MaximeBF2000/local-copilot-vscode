@@ -44,9 +44,29 @@ export interface ChatRequest {
   onProgress?: (textSoFar: string, tokenCount: number) => void;
 }
 
-export interface TokenProbability {
-  token: string;
-  probability: number;
+/** A multiple-choice question: option name → description (null when the name says it all). */
+export interface ChoiceQuestion {
+  type: 'choice';
+  instructions: string;
+  criteria: Record<string, string | null>;
+}
+
+export interface DecisionRequest {
+  model: string;
+  /** The facts the questions are about. */
+  state: string;
+  questions: Record<string, ChoiceQuestion>;
+  keepAlive?: string;
+  signal?: AbortSignal;
+}
+
+export interface DecisionAnswer {
+  /** The most likely option name. */
+  choice: string;
+  /** Probability of each option (they sum to 1). */
+  probabilities: Record<string, number>;
+  /** How concentrated the probabilities are (0 = uniform, 1 = certain). */
+  confidence: number;
 }
 
 export interface InstalledModel {
@@ -118,39 +138,17 @@ export class OllamaClient {
   }
 
   /**
-   * Asks a model for a single next token and returns the most likely candidates
-   * with their probabilities. Used by decision models that answer with one letter.
+   * Asks a decision model (Ollama `decision` capability, e.g. clef-flash) multiple-choice questions
+   * about a state, through Ollama's native decision endpoint. Answers are keyed by question name.
    */
-  async nextTokenProbabilities(
-    model: string,
-    messages: ChatMessage[],
-    keepAlive?: string,
-    signal?: AbortSignal,
-  ): Promise<TokenProbability[]> {
+  async decide(request: DecisionRequest): Promise<Record<string, DecisionAnswer>> {
     const response = await this.post(
-      '/api/chat',
-      {
-        model,
-        messages,
-        stream: false,
-        think: false,
-        keep_alive: keepAlive,
-        logprobs: true,
-        top_logprobs: 5,
-        options: { temperature: 0, num_predict: 1 },
-      },
-      signal,
+      '/v1/systemone',
+      { model: request.model, state: request.state, questions: request.questions, keep_alive: request.keepAlive },
+      request.signal,
     );
-    const body = (await response.json()) as {
-      message: { content: string };
-      logprobs?: { top_logprobs?: { token: string; logprob: number }[] }[];
-    };
-    const candidates = body.logprobs?.[0]?.top_logprobs;
-    if (!candidates?.length) {
-      // Server without logprobs support: trust the generated token fully.
-      return [{ token: body.message.content.trim(), probability: 1 }];
-    }
-    return candidates.map((c) => ({ token: c.token.trim(), probability: Math.exp(c.logprob) }));
+    const body = (await response.json()) as { answers: Record<string, DecisionAnswer> };
+    return body.answers;
   }
 
   async listModels(signal?: AbortSignal): Promise<InstalledModel[]> {

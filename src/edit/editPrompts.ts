@@ -9,6 +9,8 @@ export interface InlineEditPromptInput {
   codeBefore: string;
   targetCode: string;
   codeAfter: string;
+  /** Definitions of symbols used by the target code (read-only context). */
+  definitions?: string;
 }
 
 const INLINE_EDIT_SYSTEM = `You are an expert programmer editing code inside an editor.
@@ -33,18 +35,14 @@ export function buildInlineEditMessages(input: InlineEditPromptInput): ChatMessa
   const excerpt = isInsertion
     ? `${input.codeBefore}<insert-here/>\n${input.codeAfter}`
     : `${input.codeBefore}<target>\n${input.targetCode}\n</target>\n${input.codeAfter}`;
+  const definitions = input.definitions ? `Read-only context, definitions used by this code:\n\n${input.definitions}\n\n` : '';
   return [
     { role: 'system', content: isInsertion ? INSERT_SYSTEM : INLINE_EDIT_SYSTEM },
     {
       role: 'user',
-      content: `File: ${input.filePath}\n\n\`\`\`${input.languageId}\n${excerpt}\n\`\`\`\n\nInstruction: ${input.instruction}`,
+      content: `${definitions}File: ${input.filePath}\n\n\`\`\`${input.languageId}\n${excerpt}\n\`\`\`\n\nInstruction: ${input.instruction}`,
     },
   ];
-}
-
-export interface RelatedFile {
-  path: string;
-  content: string;
 }
 
 export interface FileEditPromptInput {
@@ -52,7 +50,8 @@ export interface FileEditPromptInput {
   filePath: string;
   languageId: string;
   fileContent: string;
-  relatedFiles: RelatedFile[];
+  /** Definitions of symbols used by the file, from other files (read-only context). */
+  definitions: string;
 }
 
 const FILE_EDIT_SYSTEM = `You are an expert programmer editing a file.
@@ -69,7 +68,7 @@ Rules:
 - Include just enough lines in SEARCH to be unique in the file; keep blocks small.
 - Use one block per separate change, in the order they appear in the file.
 - To delete code, leave the REPLACE part empty. To add code, include a nearby line in SEARCH and repeat it in REPLACE with the new code.
-- Only edit the current file. Other files are read-only context.
+- Only edit the current file. Definitions from other files are read-only context.
 - Reply with the blocks only, without explanations.`;
 
 const FULL_FILE_SYSTEM = `You are an expert programmer editing a file.
@@ -77,11 +76,8 @@ Reply with the COMPLETE new content of the file after applying the instruction, 
 Keep everything the instruction does not ask to change exactly as it is.`;
 
 function describeFiles(input: FileEditPromptInput): string {
-  const related = input.relatedFiles
-    .map((file) => `Read-only context file: ${file.path}\n\`\`\`\n${file.content}\n\`\`\``)
-    .join('\n\n');
   const current = `Current file: ${input.filePath}\n\`\`\`${input.languageId}\n${input.fileContent}\n\`\`\``;
-  return related ? `${related}\n\n${current}` : current;
+  return input.definitions ? `Read-only context, definitions used by this file:\n\n${input.definitions}\n\n${current}` : current;
 }
 
 export function buildFileEditMessages(input: FileEditPromptInput): ChatMessage[] {

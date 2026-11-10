@@ -1,36 +1,47 @@
 import * as vscode from 'vscode';
-import { affectsSettings, getSettings, updateSetting } from './config';
+import { FileAssistant } from './assistant/fileAssistant';
+import { InlineAssistant } from './assistant/inlineAssistant';
 import { AutocompleteProvider } from './completion/inlineCompletionProvider';
-import { FileEditController } from './edit/fileEditController';
-import { InlineEditController } from './edit/inlineEditController';
+import { affectsSettings, getSettings, updateSetting } from './config';
 import { logger } from './logger';
 import { showMenu } from './menu';
 import { pickModel } from './ollama/modelPicker';
+import { PromptFactory } from './prompt/promptFactory';
 import { getServices, resetServices } from './services';
 import { StatusBar } from './statusBar';
 
-export function activate(context: vscode.ExtensionContext): void {
+/** Returned by activate(); used by the integration tests to reach the live instances. */
+export interface LocalCopilotApi {
+  prompts: PromptFactory;
+  inlineAssistant: InlineAssistant;
+  fileAssistant: FileAssistant;
+}
+
+export function activate(context: vscode.ExtensionContext): LocalCopilotApi {
   logger.init(context);
   const statusBar = new StatusBar();
-  const inlineEdit = new InlineEditController(statusBar);
-  const autocomplete = new AutocompleteProvider(statusBar, (document) => inlineEdit.isBusyIn(document));
-  const fileEdit = new FileEditController(statusBar);
+  const prompts = new PromptFactory(context.extensionUri);
+  const inlineAssistant = new InlineAssistant(prompts, statusBar);
+  const fileAssistant = new FileAssistant(prompts, statusBar);
+  // No ghost text while the assistant is rewriting the same document.
+  const autocomplete = new AutocompleteProvider(
+    statusBar,
+    (document) => inlineAssistant.isBusyIn(document) || fileAssistant.isBusyIn(document),
+  );
 
-  const command = (id: string, handler: () => unknown) => vscode.commands.registerCommand(id, handler);
+  const command = (id: string, handler: (...args: never[]) => unknown) => vscode.commands.registerCommand(id, handler);
 
   context.subscriptions.push(
     statusBar,
-    inlineEdit,
-    fileEdit,
+    prompts,
+    inlineAssistant,
+    fileAssistant,
     vscode.languages.registerInlineCompletionItemProvider({ pattern: '**' }, autocomplete),
 
-    command('localCopilot.inlineEdit', () => inlineEdit.run()),
-    command('localCopilot.acceptInlineEdit', () => inlineEdit.accept()),
-    command('localCopilot.rejectInlineEdit', () => inlineEdit.reject()),
-    command('localCopilot.cancelGeneration', () => inlineEdit.cancelGeneration()),
-    command('localCopilot.fileEdit', () => fileEdit.run()),
-    command('localCopilot.acceptFileEdit', () => fileEdit.accept()),
-    command('localCopilot.rejectFileEdit', () => fileEdit.reject()),
+    command('localCopilot.inlineEdit', () => inlineAssistant.run()),
+    command('localCopilot.fileEdit', () => fileAssistant.run()),
+    command('localCopilot.submitInlinePrompt', (reply: vscode.CommentReply) => prompts.commentPrompts.submit(reply)),
+    command('localCopilot.closeInlinePrompt', (thread?: vscode.CommentThread) => prompts.commentPrompts.close(thread)),
     command('localCopilot.selectModel', () => pickModel('model')),
     command('localCopilot.selectEditModel', () => pickModel('editModel')),
     command('localCopilot.selectDecisionModel', () => pickModel('decision.model')),
@@ -46,35 +57,47 @@ export function activate(context: vscode.ExtensionContext): void {
       resetServices();
       autocomplete.clearCache();
       statusBar.clearError();
-      statusBar.render();
+      statusBar.setDecisionModelMissing(false);
       if (event.affectsConfiguration('localCopilot.model') || event.affectsConfiguration('localCopilot.decision')) {
-        void warmUpModels();
+        void warmUpModels(statusBar);
       }
     }),
   );
 
   logger.info(`Activated with model ${getSettings().model}`);
-  void warmUpModels();
+  void warmUpModels(statusBar);
+  return { prompts, inlineAssistant, fileAssistant };
 }
 
 export function deactivate(): void {
   // Nothing to clean up: everything is registered in context.subscriptions.
 }
 
-/** Loads the models into memory in the background so the first suggestion is fast. */
-async function warmUpModels(): Promise<void> {
+/** Loads the models into memory in the background so the first request is fast. */
+async function warmUpModels(statusBar: StatusBar): Promise<void> {
   const { settings, ollama } = getServices();
-  const models = new Set([settings.model]);
-  if (settings.decision.engine === 'model') {
-    models.add(settings.decision.model);
-  }
+  const usesDecisionModel = settings.decision.engine === 'model';
+  const models = usesDecisionModel ? [settings.model, settings.decision.model] : [settings.model];
   for (const model of models) {
     try {
       const startedAt = Date.now();
-      await ollama.warmUp(model, settings.keepAlive);
+      if (model === settings.decision.model && usesDecisionModel) {
+        // Decision models only answer decision requests, so warm them up with a tiny one.
+        await ollama.decide({
+          model,
+          state: 'warm-up',
+          questions: { ready: { type: 'choice', instructions: 'Is this a warm-up?', criteria: { yes: null, no: null } } },
+          keepAlive: settings.keepAlive,
+        });
+      } else {
+        await ollama.warmUp(model, settings.keepAlive);
+      }
       logger.info(`Model ${model} ready in ${Date.now() - startedAt}ms`);
     } catch (error) {
       logger.error(`Could not load model ${model}`, error);
+      if (model === settings.decision.model && usesDecisionModel) {
+        statusBar.setDecisionModelMissing(true);
+      }
     }
   }
 }

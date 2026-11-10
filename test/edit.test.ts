@@ -2,8 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { extractCode, matchIndentation } from '../src/edit/codeExtraction';
 import { applyEditBlocks, parseEditBlocks } from '../src/edit/editBlocks';
-import { candidatePaths, findLocalImports } from '../src/edit/importParsing';
-import { classifyChange, shiftBlocks } from '../src/edit/lineBlocks';
+import { findChangedRegion } from '../src/edit/textRegion';
 
 describe('extractCode', () => {
   it('reads the first fenced block', () => {
@@ -58,47 +57,17 @@ describe('edit blocks', () => {
   });
 });
 
-describe('import parsing', () => {
-  it('finds relative JS/TS imports and their symbols', () => {
-    const source = "import { a, b as c } from './utils';\nimport React from 'react';\nconst d = require('../d');\nimport type { T } from './types';";
-    assert.deepEqual(findLocalImports(source, 'typescript'), [
-      { specifier: './utils', symbols: ['a', 'b'] },
-      { specifier: './types', symbols: ['T'] },
-      { specifier: '../d', symbols: ['d'] },
-    ]);
+describe('findChangedRegion', () => {
+  it('returns undefined for identical texts', () => {
+    assert.equal(findChangedRegion('a\nb', 'a\nb'), undefined);
   });
 
-  it('finds relative Python imports', () => {
-    assert.deepEqual(findLocalImports('from .models import User, Order\nimport os', 'python'), [
-      { specifier: '.models', symbols: ['User', 'Order'] },
-    ]);
-    assert.deepEqual(candidatePaths('..core.db', 'python'), ['../core/db.py', '../core/db/__init__.py']);
+  it('keeps common leading and trailing lines', () => {
+    assert.deepEqual(findChangedRegion('a\nb\nc\nd', 'a\nB\nB2\nd'), { startLine: 1, oldLineCount: 2, newLines: ['B', 'B2'] });
   });
 
-  it('lists candidate file paths for a JS specifier', () => {
-    const paths = candidatePaths('./utils', 'typescript');
-    assert.ok(paths.includes('./utils.ts'));
-    assert.ok(paths.includes('./utils/index.ts'));
-  });
-});
-
-describe('pending inline edit line tracking', () => {
-  const blocks = { old: { start: 10, end: 12 }, proposed: { start: 13, end: 16 } };
-
-  it('shifts when the user edits above', () => {
-    assert.equal(classifyChange(blocks, { startLine: 2, endLine: 2, lineDelta: 1 }), 'shifted');
-    assert.deepEqual(shiftBlocks(blocks, 1), { old: { start: 11, end: 13 }, proposed: { start: 14, end: 17 } });
-  });
-
-  it('detects edits inside each block and below', () => {
-    assert.equal(classifyChange(blocks, { startLine: 11, endLine: 11, lineDelta: 0 }), 'touchesOld');
-    assert.equal(classifyChange(blocks, { startLine: 14, endLine: 14, lineDelta: 0 }), 'touchesProposed');
-    assert.equal(classifyChange(blocks, { startLine: 30, endLine: 30, lineDelta: 0 }), 'unaffected');
-  });
-
-  it('handles insertions (no old block)', () => {
-    const insertion = { old: { start: 5, end: 4 }, proposed: { start: 5, end: 7 } };
-    assert.equal(classifyChange(insertion, { startLine: 1, endLine: 1, lineDelta: 0 }), 'shifted');
-    assert.equal(classifyChange(insertion, { startLine: 6, endLine: 6, lineDelta: 0 }), 'touchesProposed');
+  it('describes pure insertions and deletions', () => {
+    assert.deepEqual(findChangedRegion('a\nc', 'a\nb\nc'), { startLine: 1, oldLineCount: 0, newLines: ['b'] });
+    assert.deepEqual(findChangedRegion('a\nb\nc', 'a\nc'), { startLine: 1, oldLineCount: 1, newLines: [] });
   });
 });

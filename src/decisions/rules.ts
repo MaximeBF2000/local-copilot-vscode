@@ -54,22 +54,31 @@ export function chooseEditScopeByRules(instruction: string, hasEnclosingFunction
   return 'function';
 }
 
-const MENTIONS_OTHER_FILES =
-  /\b(other files?|imported|imports|types? from|interface from|same (way|style|pattern) as|consistent with|like in|defined in|from the (module|file)|across|existing (helpers?|utils?|types?))\b/i;
+export type Intent = 'edit' | 'chat';
+
+/** Polite openings that don't tell us anything: "please", "can you", "could you"… */
+const POLITE_PREFIX = /^(please|pls|hey|ok|okay|so|now|then|also|and|can you|could you|would you|will you|i want you to|i'd like you to|i would like you to|let's|lets|try to|go ahead and)\b[\s,]*/i;
+
+const EDIT_VERB =
+  /^(add|apply|change|clean|convert|create|delete|document|extract|fix|format|generate|handle|implement|improve|inline|insert|make|migrate|move|optimi[sz]e|port|refactor|remove|rename|reorder|replace|restructure|rewrite|simplify|sort|split|swap|translate|turn|update|upgrade|use|wrap|write|annotate|type|memoi[sz]e|parallelize|cache|validate|log|comment|uncomment|enable|disable|support|switch|reduce|increase|decrease|limit|merge|combine|modernize|harden|guard)\b/i;
+
+const QUESTION_START =
+  /^(explain|what|what's|whats|why|how|where|when|who|which|is|are|was|were|does|do|did|can|could|should|would|will|describe|summari[sz]e|tell me|walk me through|help me understand|review|analy[sz]e|compare|list|give me an overview|any idea|is there|are there|i don't understand|i dont understand)\b/i;
 
 /**
- * Decide whether a file-level edit should see the files imported by the current file.
- * True when the instruction mentions them or refers to code that lives elsewhere.
+ * Should the instruction change code ("refactor this") or get an answer ("explain this")?
+ * Imperative edit verbs win, then questions; when unclear we edit, as Cmd+K does.
  */
-export function needsRelatedFilesByRules(instruction: string, relatedFileNames: string[], importedSymbols: string[]): boolean {
-  if (relatedFileNames.length === 0) {
-    return false;
+export function chooseIntentByRules(instruction: string): Intent {
+  let text = instruction.trim();
+  while (POLITE_PREFIX.test(text)) {
+    text = text.replace(POLITE_PREFIX, '');
   }
-  if (MENTIONS_OTHER_FILES.test(instruction)) {
-    return true;
+  if (EDIT_VERB.test(text)) {
+    return 'edit';
   }
-  const words = new Set(instruction.toLowerCase().match(/[\w$]+/g) ?? []);
-  const mentionsFile = relatedFileNames.some((name) => words.has(name.toLowerCase()));
-  const mentionsSymbol = importedSymbols.some((symbol) => symbol.length > 2 && words.has(symbol.toLowerCase()));
-  return mentionsFile || mentionsSymbol;
+  if (QUESTION_START.test(text) || text.endsWith('?')) {
+    return 'chat';
+  }
+  return 'edit';
 }

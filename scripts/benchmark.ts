@@ -7,6 +7,7 @@ import { CompletionMode, chooseCompletionMode, commentAboveCursor } from '../src
 import { generateCompletion } from '../src/completion/completionGenerator';
 import { resolvePromptFormat } from '../src/completion/fimTemplates';
 import { ModelDecisionEngine } from '../src/decisions/modelDecisionEngine';
+import { commentIntentDecision } from '../src/decisions/decisionQuestions';
 import { RulesDecisionEngine } from '../src/decisions/decisionEngine';
 import { applyEditBlocks, parseEditBlocks } from '../src/edit/editBlocks';
 import { buildFileEditMessages, buildInlineEditMessages } from '../src/edit/editPrompts';
@@ -14,7 +15,7 @@ import { extractCode } from '../src/edit/codeExtraction';
 import { OllamaClient } from '../src/ollama/ollamaClient';
 
 const MODEL = process.argv[2] ?? 'qwen3.6:35b-mlx';
-const DECISION_MODEL = process.argv[3] ?? 'nimble:latest';
+const DECISION_MODEL = process.argv[3] ?? 'clef-flash';
 const ollama = new OllamaClient('http://localhost:11434');
 
 interface Scenario {
@@ -106,8 +107,38 @@ const COMMENTS: [string, boolean][] = [
   ['// Copyright 2024 Acme Inc.', false],
 ];
 
+const INTENTS: [string, 'chat' | 'edit'][] = [
+  ['explain this function', 'chat'],
+  ['refactor this function to make it easier to understand', 'edit'],
+  ['what does this regex match?', 'chat'],
+  ['add error handling', 'edit'],
+  ['why is this slow?', 'chat'],
+  ['make it faster', 'edit'],
+  ['is there a bug in this loop', 'chat'],
+  ['fix the off-by-one bug in this loop', 'edit'],
+  ['can you convert this to async/await', 'edit'],
+  ['summarize what this file does', 'chat'],
+  ['how could I make this more readable?', 'chat'],
+  ['rename x to userCount', 'edit'],
+  ['review this code for security issues', 'chat'],
+  ['add JSDoc comments', 'edit'],
+  ['walk me through the algorithm', 'chat'],
+  ['translate the error messages to French', 'edit'],
+  ['this is confusing, could it be simpler', 'edit'],
+  ['the tests fail with a null pointer here', 'chat'],
+  // Other languages and unusual phrasings, where fixed rules struggle.
+  ['explique cette fonction', 'chat'],
+  ['ajoute la gestion des erreurs', 'edit'],
+  ["est-ce qu'il y a un bug ici", 'chat'],
+  ['erklär mir diese Funktion', 'chat'],
+  ['optimiza esta función', 'edit'],
+  ["I don't get the second loop", 'chat'],
+  ['loop should start at 1 not 0', 'edit'],
+  ['needs types', 'edit'],
+];
+
 async function benchmarkDecisions(): Promise<void> {
-  console.log(`\n## Comment intent decisions: rules vs ${DECISION_MODEL}\n`);
+  console.log(`\n## Decisions: rules vs ${DECISION_MODEL}\n`);
   const rules = new RulesDecisionEngine();
   const model = new ModelDecisionEngine(ollama, {
     model: DECISION_MODEL,
@@ -115,23 +146,41 @@ async function benchmarkDecisions(): Promise<void> {
     timeoutMs: 5000,
     onError: (message, error) => console.log(`  ! ${message}: ${String(error)}`),
   });
-  await model.isImplementationRequest('// warm up');
+  await model.chooseIntent({ instruction: 'warm up', target: '' });
 
   let rulesCorrect = 0;
   let modelCorrect = 0;
-  const modelTimings: number[] = [];
+  const timings: number[] = [];
+  console.log('### Answer vs edit\n');
+  for (const [instruction, expected] of INTENTS) {
+    const byRules = await rules.chooseIntent({ instruction });
+    const startedAt = Date.now();
+    const byModel = await model.chooseIntent({ instruction, target: '' });
+    timings.push(Date.now() - startedAt);
+    rulesCorrect += Number(byRules === expected);
+    modelCorrect += Number(byModel === expected);
+    const mark = (v: string) => (v === expected ? '✓' : '✗');
+    console.log(`- ${mark(byRules)} rules  ${mark(byModel)} model  ${instruction}`);
+  }
+  timings.sort((a, b) => a - b);
+  console.log(`\nRules: ${rulesCorrect}/${INTENTS.length} · Model: ${modelCorrect}/${INTENTS.length} (median ${timings[Math.floor(timings.length / 2)]}ms)`);
+
+  console.log('\n### Comment asks for code\n');
+  let rulesComments = 0;
+  let modelComments = 0;
+  const commentTimings: number[] = [];
   for (const [comment, expected] of COMMENTS) {
     const byRules = await rules.isImplementationRequest(comment);
     const startedAt = Date.now();
-    const byModel = await model.isImplementationRequest(comment);
-    modelTimings.push(Date.now() - startedAt);
-    rulesCorrect += Number(byRules === expected);
-    modelCorrect += Number(byModel === expected);
+    const byModel = (await model.ask(commentIntentDecision(comment))) === 'implement';
+    commentTimings.push(Date.now() - startedAt);
+    rulesComments += Number(byRules === expected);
+    modelComments += Number(byModel === expected);
     const mark = (v: boolean) => (v === expected ? '✓' : '✗');
     console.log(`- ${mark(byRules)} rules  ${mark(byModel)} model  ${comment}`);
   }
-  modelTimings.sort((a, b) => a - b);
-  console.log(`\nRules: ${rulesCorrect}/${COMMENTS.length} (≈0ms) · Model: ${modelCorrect}/${COMMENTS.length} (median ${modelTimings[Math.floor(modelTimings.length / 2)]}ms)`);
+  commentTimings.sort((a, b) => a - b);
+  console.log(`\nRules: ${rulesComments}/${COMMENTS.length} · Model: ${modelComments}/${COMMENTS.length} (median ${commentTimings[Math.floor(commentTimings.length / 2)]}ms)`);
 }
 
 /** Does running the decision model at the same time slow down the completion model? */
@@ -140,7 +189,12 @@ async function benchmarkContention(): Promise<void> {
   const prompt = `<|fim_prefix|>function fibonacci(n: number): number {\n<|fim_suffix|>\n}\n<|fim_middle|>`;
   const run = () => ollama.generateRaw({ model: MODEL, prompt, options: { temperature: 0, num_predict: 60 }, keepAlive: '30m' });
   const decision = () =>
-    ollama.nextTokenProbabilities(DECISION_MODEL, [{ role: 'user', content: 'Answer A or B. Is the sky blue? A: yes B: no' }], '30m');
+    ollama.decide({
+      model: DECISION_MODEL,
+      state: 'The sky is blue.',
+      questions: { q: { type: 'choice', instructions: 'Is the statement true?', criteria: { yes: null, no: null } } },
+      keepAlive: '30m',
+    });
 
   const alone: number[] = [];
   const parallel: number[] = [];
@@ -203,7 +257,7 @@ async function benchmarkEdits(): Promise<void> {
       filePath: 'src/load.js',
       languageId: 'javascript',
       fileContent: EDIT_FILE,
-      relatedFiles: [],
+      definitions: '',
     }),
     options: { temperature: 0.2, num_ctx: 32768 },
   });

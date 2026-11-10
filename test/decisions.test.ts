@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { buildDecisionMessages, readChoiceProbabilities } from '../src/decisions/decisionPrompt';
+import { commentIntentDecision, editScopeDecision, intentDecision } from '../src/decisions/decisionQuestions';
 import {
   chooseEditScopeByRules,
+  chooseIntentByRules,
   isImplementationRequestByRules,
-  needsRelatedFilesByRules,
   shouldSuggestByRules,
 } from '../src/decisions/rules';
 
@@ -56,43 +56,45 @@ describe('chooseEditScopeByRules', () => {
   });
 });
 
-describe('needsRelatedFilesByRules', () => {
-  it('includes related files when the instruction mentions them', () => {
-    assert.equal(needsRelatedFilesByRules('use the User type correctly', ['models'], ['User']), true);
-    assert.equal(needsRelatedFilesByRules('follow the same style as the imported helpers', ['utils'], []), true);
-    assert.equal(needsRelatedFilesByRules('add comments', ['models'], ['User']), false);
-    assert.equal(needsRelatedFilesByRules('use User', [], []), false);
+describe('decision questions', () => {
+  it('asks multiple-choice questions whose option names are the engine values', () => {
+    assert.deepEqual(Object.keys(intentDecision('explain this', 'a function').question.criteria).sort(), ['chat', 'edit']);
+    assert.deepEqual(Object.keys(editScopeDecision('fix it', 'x++').question.criteria).sort(), ['function', 'line']);
+    assert.deepEqual(Object.keys(commentIntentDecision('// sort users').question.criteria).sort(), ['implement', 'note']);
+  });
+
+  it('puts the request in the state', () => {
+    const decision = intentDecision('explain this function', 'a function');
+    assert.equal(decision.question.type, 'choice');
+    assert.match(decision.state, /explain this function/);
   });
 });
 
-describe('decision prompt', () => {
-  const question = {
-    field: 'intent',
-    question: 'Is it a request?',
-    choices: [
-      { value: true, description: 'yes' },
-      { value: false, description: 'no' },
-    ],
-    context: '// make it',
-  };
-
-  it('labels choices with letters', () => {
-    const user = buildDecisionMessages(question)[1].content;
-    assert.match(user, /A: true — yes\nB: false — no/);
-    assert.match(user, /Requested field: intent/);
-  });
-
-  it('normalises letter probabilities', () => {
-    const result = readChoiceProbabilities(question, [
-      { token: 'B', probability: 0.6 },
-      { token: 'A', probability: 0.2 },
-      { token: 'The', probability: 0.2 },
-    ]);
-    assert.equal(result[0].value, false);
-    assert.ok(Math.abs(result[0].probability - 0.75) < 1e-9);
-  });
-
-  it('throws when no known letter is present', () => {
-    assert.throws(() => readChoiceProbabilities(question, [{ token: 'Hello', probability: 1 }]));
-  });
+describe('chooseIntentByRules', () => {
+  const chat = [
+    'explain this function',
+    'what does this regex match?',
+    'why is this slow?',
+    'is there a bug in this loop',
+    'summarize what this file does',
+    'how could I make this more readable?',
+    'review this code for security issues',
+    'walk me through the algorithm',
+  ];
+  const edits = [
+    'refactor this function to make it easier to understand',
+    'add error handling',
+    'make it faster',
+    'fix the off-by-one bug in this loop',
+    'can you convert this to async/await',
+    'please rename x to userCount',
+    'translate the error messages to French',
+    'use a map instead of the loop',
+  ];
+  for (const text of chat) {
+    it(`answers: ${text}`, () => assert.equal(chooseIntentByRules(text), 'chat'));
+  }
+  for (const text of edits) {
+    it(`edits: ${text}`, () => assert.equal(chooseIntentByRules(text), 'edit'));
+  }
 });

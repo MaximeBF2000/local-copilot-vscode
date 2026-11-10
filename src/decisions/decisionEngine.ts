@@ -1,14 +1,15 @@
 import {
   EditScope,
+  Intent,
   chooseEditScopeByRules,
+  chooseIntentByRules,
   isImplementationRequestByRules,
-  needsRelatedFilesByRules,
   shouldSuggestByRules,
 } from './rules';
 
 /**
  * The small "decision" questions the orchestrator asks while working.
- * Implemented either by plain rules or by a small local decision model.
+ * Implemented either by plain rules or by a small local decision model (clef-flash).
  */
 export interface DecisionEngine {
   readonly name: string;
@@ -19,14 +20,11 @@ export interface DecisionEngine {
   /** Does this comment ask for an implementation to be written below it? */
   isImplementationRequest(comment: string, signal?: AbortSignal): Promise<boolean>;
 
-  /** Without a selection: should a Cmd+J instruction target the current line or the enclosing function? */
-  chooseEditScope(input: { instruction: string; currentLine: string; hasEnclosingFunction: boolean }, signal?: AbortSignal): Promise<EditScope>;
+  /** Does the prompt ask to change code ("refactor this") or for an answer ("explain this")? */
+  chooseIntent(input: { instruction: string; target: string }, signal?: AbortSignal): Promise<Intent>;
 
-  /** Should a file-level edit also read the files imported by this file? */
-  needsRelatedFiles(
-    input: { instruction: string; relatedFileNames: string[]; importedSymbols: string[] },
-    signal?: AbortSignal,
-  ): Promise<boolean>;
+  /** Without a selection: should an inline instruction target the current line or the enclosing function? */
+  chooseEditScope(input: { instruction: string; currentLine: string; hasEnclosingFunction: boolean }, signal?: AbortSignal): Promise<EditScope>;
 }
 
 export class RulesDecisionEngine implements DecisionEngine {
@@ -40,11 +38,11 @@ export class RulesDecisionEngine implements DecisionEngine {
     return isImplementationRequestByRules(comment);
   }
 
-  async chooseEditScope(input: { instruction: string; hasEnclosingFunction: boolean }): Promise<EditScope> {
-    return chooseEditScopeByRules(input.instruction, input.hasEnclosingFunction);
+  async chooseIntent(input: { instruction: string }): Promise<Intent> {
+    return chooseIntentByRules(input.instruction);
   }
 
-  async needsRelatedFiles(input: { instruction: string; relatedFileNames: string[]; importedSymbols: string[] }): Promise<boolean> {
-    return needsRelatedFilesByRules(input.instruction, input.relatedFileNames, input.importedSymbols);
+  async chooseEditScope(input: { instruction: string; hasEnclosingFunction: boolean }): Promise<EditScope> {
+    return chooseEditScopeByRules(input.instruction, input.hasEnclosingFunction);
   }
 }

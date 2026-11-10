@@ -8,6 +8,7 @@ export class StatusBar implements vscode.Disposable {
   private readonly item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   private busyCount = 0;
   private errorMessage: string | undefined;
+  private decisionModelMissing = false;
 
   constructor() {
     this.item.command = 'localCopilot.showMenu';
@@ -34,6 +35,12 @@ export class StatusBar implements vscode.Disposable {
     this.render();
   }
 
+  /** The decision model couldn't be loaded: decisions use the rules until settings change. */
+  setDecisionModelMissing(missing: boolean): void {
+    this.decisionModelMissing = missing;
+    this.render();
+  }
+
   clearError(): void {
     if (this.errorMessage) {
       this.errorMessage = undefined;
@@ -53,7 +60,7 @@ export class StatusBar implements vscode.Disposable {
         `Autocomplete: ${settings.autocomplete.enabled ? 'on' : 'off'}`,
         `Model: \`${settings.model}\``,
         `Edit model: \`${settings.editModel}\``,
-        `Decisions: ${settings.decision.engine === 'model' ? `\`${settings.decision.model}\`` : 'rules'}`,
+        `Decisions: ${describeDecisions(settings.decision.engine, settings.decision.model, this.decisionModelMissing)}`,
         this.errorMessage ? `\n$(warning) ${this.errorMessage}` : '',
         '\nClick for options',
       ].join('  \n'),
@@ -65,6 +72,11 @@ export class StatusBar implements vscode.Disposable {
   dispose(): void {
     this.item.dispose();
   }
+}
+
+function describeDecisions(engine: string, model: string, missing: boolean): string {
+  if (engine !== 'model') return 'rules';
+  return missing ? `rules (\`${model}\` not installed in Ollama)` : `\`${model}\` + rules`;
 }
 
 function shortModelName(model: string): string {

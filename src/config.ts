@@ -20,15 +20,18 @@ export interface Settings {
     disabledLanguages: string[];
   };
   decision: {
-    engine: 'rules' | 'model';
+    engine: 'model' | 'rules';
     model: string;
     timeoutMs: number;
   };
   edit: {
     enableThinking: boolean;
     contextLines: number;
-    includeRelatedFiles: boolean;
-    maxRelatedFiles: number;
+  };
+  context: {
+    /** Add the definitions of symbols used by the code (via the language server) to prompts. */
+    definitions: boolean;
+    maxDefinitionChars: number;
   };
   debugLogging: boolean;
 }
@@ -59,15 +62,17 @@ export function getSettings(): Settings {
       disabledLanguages: read('autocomplete.disabledLanguages', ['plaintext', 'scminput']),
     },
     decision: {
-      engine: read('decision.engine', 'rules'),
-      model: read('decision.model', 'nimble:latest'),
-      timeoutMs: read('decision.timeoutMs', 400),
+      engine: read('decision.engine', 'model'),
+      model: read('decision.model', 'clef-flash'),
+      timeoutMs: read('decision.timeoutMs', 1500),
     },
     edit: {
       enableThinking: read('edit.enableThinking', false),
       contextLines: read('edit.contextLines', 60),
-      includeRelatedFiles: read('edit.includeRelatedFiles', true),
-      maxRelatedFiles: read('edit.maxRelatedFiles', 4),
+    },
+    context: {
+      definitions: read('context.definitions', true),
+      maxDefinitionChars: read('context.maxDefinitionChars', 12000),
     },
     debugLogging: read('debugLogging', false),
   };

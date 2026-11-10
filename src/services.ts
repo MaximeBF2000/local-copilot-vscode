@@ -32,6 +32,8 @@ function createServices(settings: Settings): Services {
           keepAlive: settings.keepAlive,
           timeoutMs: settings.decision.timeoutMs,
           onError: (message, error) => logger.debug(`${message}: ${error instanceof Error ? error.message : String(error)}`),
+          onDecision: (field, value, probability, durationMs) =>
+            logger.debug(`Decision ${field} = ${String(value)} (p=${probability.toFixed(2)}, ${durationMs}ms)`),
         })
       : new RulesDecisionEngine();
   return { settings, ollama, decisions };

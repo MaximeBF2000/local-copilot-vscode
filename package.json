@@ -28,42 +28,13 @@
     "commands": [
       {
         "command": "localCopilot.inlineEdit",
-        "title": "Edit Selection with AI",
+        "title": "Inline Prompt (Ask or Edit)",
         "category": "Local Copilot"
       },
       {
         "command": "localCopilot.fileEdit",
-        "title": "Edit File with AI",
+        "title": "File Prompt (Ask or Edit)",
         "category": "Local Copilot"
-      },
-      {
-        "command": "localCopilot.acceptInlineEdit",
-        "title": "Accept AI Edit",
-        "category": "Local Copilot",
-        "icon": "$(check)"
-      },
-      {
-        "command": "localCopilot.rejectInlineEdit",
-        "title": "Reject AI Edit",
-        "category": "Local Copilot",
-        "icon": "$(close)"
-      },
-      {
-        "command": "localCopilot.cancelGeneration",
-        "title": "Cancel AI Generation",
-        "category": "Local Copilot"
-      },
-      {
-        "command": "localCopilot.acceptFileEdit",
-        "title": "Accept AI File Changes",
-        "category": "Local Copilot",
-        "icon": "$(check)"
-      },
-      {
-        "command": "localCopilot.rejectFileEdit",
-        "title": "Reject AI File Changes",
-        "category": "Local Copilot",
-        "icon": "$(close)"
       },
       {
         "command": "localCopilot.selectModel",
@@ -99,6 +70,18 @@
         "command": "localCopilot.configureShortcuts",
         "title": "Change Keyboard Shortcuts",
         "category": "Local Copilot"
+      },
+      {
+        "command": "localCopilot.submitInlinePrompt",
+        "title": "Send",
+        "category": "Local Copilot",
+        "icon": "$(send)"
+      },
+      {
+        "command": "localCopilot.closeInlinePrompt",
+        "title": "Close",
+        "category": "Local Copilot",
+        "icon": "$(close)"
       }
     ],
     "keybindings": [
@@ -106,7 +89,7 @@
         "command": "localCopilot.inlineEdit",
         "key": "ctrl+j",
         "mac": "cmd+j",
-        "when": "editorTextFocus && !editorReadonly && !localCopilot.inlineEditPending"
+        "when": "editorTextFocus && !editorReadonly"
       },
       {
         "command": "localCopilot.fileEdit",
@@ -115,54 +98,34 @@
         "when": "editorTextFocus && !editorReadonly"
       },
       {
-        "command": "localCopilot.acceptInlineEdit",
-        "key": "tab",
-        "when": "editorTextFocus && localCopilot.inlineEditPending"
-      },
-      {
-        "command": "localCopilot.rejectInlineEdit",
+        "command": "localCopilot.closeInlinePrompt",
         "key": "escape",
-        "when": "editorTextFocus && localCopilot.inlineEditPending"
-      },
-      {
-        "command": "localCopilot.cancelGeneration",
-        "key": "escape",
-        "when": "editorTextFocus && localCopilot.generating"
+        "when": "commentEditorFocused && commentController == localCopilot"
       }
     ],
     "menus": {
-      "editor/title": [
+      "comments/commentThread/context": [
         {
-          "command": "localCopilot.acceptFileEdit",
-          "when": "localCopilot.fileEditPending && isInDiffEditor",
-          "group": "navigation@1"
-        },
+          "command": "localCopilot.submitInlinePrompt",
+          "group": "inline",
+          "when": "commentController == localCopilot"
+        }
+      ],
+      "comments/commentThread/title": [
         {
-          "command": "localCopilot.rejectFileEdit",
-          "when": "localCopilot.fileEditPending && isInDiffEditor",
-          "group": "navigation@2"
+          "command": "localCopilot.closeInlinePrompt",
+          "group": "inline",
+          "when": "commentController == localCopilot"
         }
       ],
       "commandPalette": [
         {
-          "command": "localCopilot.acceptInlineEdit",
-          "when": "localCopilot.inlineEditPending"
+          "command": "localCopilot.submitInlinePrompt",
+          "when": "false"
         },
         {
-          "command": "localCopilot.rejectInlineEdit",
-          "when": "localCopilot.inlineEditPending"
-        },
-        {
-          "command": "localCopilot.acceptFileEdit",
-          "when": "localCopilot.fileEditPending"
-        },
-        {
-          "command": "localCopilot.rejectFileEdit",
-          "when": "localCopilot.fileEditPending"
-        },
-        {
-          "command": "localCopilot.cancelGeneration",
-          "when": "localCopilot.generating"
+          "command": "localCopilot.closeInlinePrompt",
+          "when": "false"
         }
       ]
     },
@@ -270,51 +233,51 @@
         },
         "localCopilot.decision.engine": {
           "type": "string",
-          "default": "rules",
+          "default": "model",
           "enum": [
-            "rules",
-            "model"
+            "model",
+            "rules"
           ],
           "enumDescriptions": [
-            "Fast TypeScript heuristics (no extra model).",
-            "Ask a small Ollama decision model (e.g. one with the 'decision' capability), falling back to rules on error or timeout."
+            "Ask a local decision model (clef-flash) for prompt decisions: answer vs edit, edit scope, related files. Autocomplete decisions always use the faster rules. Falls back to rules if the model is unavailable.",
+            "Use only fast TypeScript heuristics."
           ],
-          "description": "How decisions are made (should we suggest? does this comment ask for code? edit scope? related files?)."
+          "description": "How the assistant makes its small decisions."
         },
         "localCopilot.decision.model": {
           "type": "string",
-          "default": "nimble:latest",
-          "description": "Ollama model used when the decision engine is 'model'."
+          "default": "clef-flash",
+          "description": "Ollama decision model (a model with the 'decision' capability, e.g. clef-flash). Install with: ollama pull clef-flash"
         },
         "localCopilot.decision.timeoutMs": {
           "type": "number",
-          "default": 400,
-          "description": "Maximum time to wait for a decision model before falling back to rules."
+          "default": 1500,
+          "description": "Maximum time to wait for the decision model before falling back to rules."
         },
         "localCopilot.edit.enableThinking": {
           "type": "boolean",
           "default": false,
-          "description": "Let thinking models reason before answering Cmd+K edits (slower, sometimes better)."
+          "description": "Let thinking models reason before answering prompts (slower, sometimes better)."
         },
         "localCopilot.edit.contextLines": {
           "type": "number",
           "default": 60,
-          "description": "Lines of surrounding code sent with an inline (Cmd+K) edit."
-        },
-        "localCopilot.edit.includeRelatedFiles": {
-          "type": "boolean",
-          "default": true,
-          "description": "Allow file-level edits (Cmd+Shift+K) to include locally imported files as context."
-        },
-        "localCopilot.edit.maxRelatedFiles": {
-          "type": "number",
-          "default": 4,
-          "description": "Maximum number of related files included in file-level edits."
+          "description": "Lines of surrounding code sent with inline prompts (Cmd+J)."
         },
         "localCopilot.debugLogging": {
           "type": "boolean",
           "default": false,
           "description": "Log prompts and timings to the 'Local Copilot' output channel."
+        },
+        "localCopilot.context.definitions": {
+          "type": "boolean",
+          "default": true,
+          "description": "Give prompts (Cmd+J / Cmd+Shift+J) the definitions of the functions, types and variables the code uses, found through the language server (resolves imports across files)."
+        },
+        "localCopilot.context.maxDefinitionChars": {
+          "type": "number",
+          "default": 12000,
+          "description": "Maximum size of the definitions added to a prompt (characters; ~4 characters per token)."
         }
       }
     }
@@ -332,5 +295,8 @@
     "@types/vscode": "^1.90.0",
     "@vscode/vsce": "^3.0.0",
     "typescript": "^5.5.0"
-  }
+  },
+  "enabledApiProposals": [
+    "editorInsets"
+  ]
 }

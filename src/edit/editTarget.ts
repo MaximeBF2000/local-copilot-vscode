@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { DecisionEngine } from '../decisions/decisionEngine';
 
-/** The lines a Cmd+J edit rewrites. An empty range on a blank line means "insert code here". */
+/** The lines an inline (Cmd+J) edit rewrites. An empty range on a blank line means "insert code here". */
 export interface EditTarget {
   range: vscode.Range;
   description: string;
@@ -19,15 +19,14 @@ const FUNCTION_KINDS = new Set([
  * - Otherwise: the current line or the enclosing function, as decided by the decision engine.
  */
 export async function resolveEditTarget(
-  editor: vscode.TextEditor,
+  document: vscode.TextDocument,
+  selection: vscode.Selection,
   instruction: string,
   decisions: DecisionEngine,
+  signal?: AbortSignal,
 ): Promise<EditTarget> {
-  const { document, selection } = editor;
-
   if (!selection.isEmpty) {
-    const endLine = selection.end.character === 0 && selection.end.line > selection.start.line ? selection.end.line - 1 : selection.end.line;
-    return { range: fullLines(document, selection.start.line, endLine), description: 'selection' };
+    return { range: selectedLines(document, selection), description: 'selection' };
   }
 
   const line = document.lineAt(selection.active.line);
@@ -36,15 +35,34 @@ export async function resolveEditTarget(
   }
 
   const enclosingFunction = await findEnclosingFunction(document, selection.active);
-  const scope = await decisions.chooseEditScope({
-    instruction,
-    currentLine: line.text,
-    hasEnclosingFunction: enclosingFunction !== undefined,
-  });
+  const scope = await decisions.chooseEditScope(
+    { instruction, currentLine: line.text, hasEnclosingFunction: enclosingFunction !== undefined },
+    signal,
+  );
   if (scope === 'function' && enclosingFunction) {
     return { range: fullLines(document, enclosingFunction.start.line, enclosingFunction.end.line), description: 'function' };
   }
   return { range: fullLines(document, line.lineNumber, line.lineNumber), description: 'line' };
+}
+
+/** The code a question is about: the selection, else the enclosing function, else the lines around the cursor. */
+export async function resolveQuestionContext(document: vscode.TextDocument, selection: vscode.Selection): Promise<{ range: vscode.Range; label: string }> {
+  if (!selection.isEmpty) {
+    return { range: selectedLines(document, selection), label: 'the selected code' };
+  }
+  const enclosingFunction = await findEnclosingFunction(document, selection.active);
+  if (enclosingFunction) {
+    return { range: fullLines(document, enclosingFunction.start.line, enclosingFunction.end.line), label: 'the function around the cursor' };
+  }
+  const start = Math.max(0, selection.active.line - 30);
+  const end = Math.min(document.lineCount - 1, selection.active.line + 30);
+  return { range: fullLines(document, start, end), label: 'the code around the cursor' };
+}
+
+/** Whole lines covered by a selection (a selection ending at column 0 doesn't include that line). */
+export function selectedLines(document: vscode.TextDocument, selection: vscode.Selection): vscode.Range {
+  const endLine = selection.end.character === 0 && selection.end.line > selection.start.line ? selection.end.line - 1 : selection.end.line;
+  return fullLines(document, selection.start.line, endLine);
 }
 
 function fullLines(document: vscode.TextDocument, startLine: number, endLine: number): vscode.Range {
